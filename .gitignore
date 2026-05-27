@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# 环境
+.env
+venv/
+.venv/
+
+# 配置（本地覆盖）
+config/config.local.json
+
+# 日志
+logs/*
+!logs/.gitkeep
+
+# 记忆存储
+memory/*
+!memory/.gitkeep
+
+# 系统
+.DS_Store
+Thumbs.db
+*.log
