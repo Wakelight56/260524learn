@@ -1,0 +1,36 @@
+{
+  "onebot": {
+    "host": "127.0.0.1",
+    "port": 3001,
+    "access_token": ""
+  },
+  "ai": {
+    "provider": "openai",
+    "openai": {
+      "api_key": "sk-xxxxxxxxxxxxxxxx",
+      "base_url": "https://api.openai.com/v1",
+      "model": "gpt-3.5-turbo",
+      "max_tokens": 2000,
+      "temperature": 0.7
+    },
+    "claude": {
+      "api_key": "sk-ant-xxxxxxxxxxxxxxxx",
+      "base_url": "https://api.anthropic.com",
+      "model": "claude-sonnet-4-6",
+      "max_tokens": 2000,
+      "temperature": 0.7
+    }
+  },
+  "bot": {
+    "name": "AutoChat",
+    "nickname": ["AI助手", "小助手"],
+    "master_qq": 123456789,
+    "auto_reply_groups": [123456, 789012],
+    "auto_reply_private": true,
+    "trigger_prefix": "",
+    "trigger_at_mention": true,
+    "enable_memory": true,
+    "max_history": 50,
+    "reply_prefix": ""
+  }
+}

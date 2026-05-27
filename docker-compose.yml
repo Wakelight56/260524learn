@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  autochat:
+    build: .
+    container_name: autochat
+    restart: unless-stopped
+    volumes:
+      - ./config:/app/config
+      - ./memory:/app/memory
+      - ./logs:/app/logs
+    environment:
+      - TZ=Asia/Shanghai
+    network_mode: host
+    # 如果 NapCat 在宿主机用 network_mode: host 最简单
+    # 如果 NapCat 也在 Docker 中，用下面的配置：
+    # networks:
+    #   - qq-network
+
+# networks:
+#   qq-network:
+#     external: true
