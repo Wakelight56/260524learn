@@ -204,7 +204,7 @@ class AutoBot:
                 logger.info("定时清理: 移除了 %d 个过期会话", cleaned)
 
     async def _send_restart_notification(self):
-        """检查重启标志，发送重启完毕通知"""
+        """检查重启标志，发送重启完毕通知（含已加载的插件列表）"""
         flag_path = Path("memory/.restart_flag.json")
         if not flag_path.exists():
             return
@@ -212,7 +212,13 @@ class AutoBot:
             target = json.loads(flag_path.read_text(encoding="utf-8"))
             flag_path.unlink()
             # 等待平台连接就绪（NapCat WS 连接需要几秒）
-            msg = "已重启完毕。"
+            plugin_names = list(self.plugin_mgr.plugins.keys())
+            parts = ["已重启完毕。\n"]
+            parts.append(f"已加载插件 ({len(plugin_names)}): {', '.join(plugin_names)}")
+            if self._retriever:
+                parts.append("知识库: 已加载")
+            parts.append(f"AI: {type(self._provider).__name__ if self._provider else 'N/A'}")
+            msg = " | ".join(parts)
             await asyncio.sleep(10)
             for platform in self.platforms:
                 try:

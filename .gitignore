@@ -39,6 +39,3 @@ backup.py
 data/
 tmp_*/
 temp_*
-
-# 项目文件
-tmp_lunabot/

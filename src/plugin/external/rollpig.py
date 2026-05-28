@@ -15,7 +15,7 @@ from src.platform.event import MessageEvent
 
 logger = logging.getLogger("autochat.plugin.user.rollpig")
 
-RESOURCE_DIR = Path("data/rollpig/resource")
+RESOURCE_DIR = Path(__file__).parent / "rollpig_data"
 FONT_DIR = RESOURCE_DIR / "font"
 IMAGE_DIR = RESOURCE_DIR / "image"
 PIGINFO_PATH = RESOURCE_DIR / "pig.json"
