@@ -11,6 +11,7 @@ import aiohttp
 from aiohttp import web
 
 from src.event_bus import EventBus
+from src.knowledge.poke_replies import PokeReplyManager
 from src.platform.base import Platform
 from src.platform.event import MessageEvent, MessageType
 
@@ -27,7 +28,7 @@ class NapCatAdapter(Platform):
     def platform_name(self) -> str:
         return "napcat"
 
-    def __init__(self, config: dict, event_bus: EventBus):
+    def __init__(self, config: dict, event_bus: EventBus, poke_mgr: Optional[PokeReplyManager] = None):
         super().__init__(config, event_bus)
         ws_cfg = config.get("onebot", {})
         self._ws_host = ws_cfg.get("host", "127.0.0.1")
@@ -36,6 +37,7 @@ class NapCatAdapter(Platform):
         self._app: Optional[web.Application] = None
         self._runner: Optional[web.AppRunner] = None
         self._ws_clients: set[web.WebSocketResponse] = set()
+        self._poke_mgr = poke_mgr
 
     async def start(self):
         """启动 WebSocket 服务端，等待 NapCat 连接"""
@@ -104,6 +106,30 @@ class NapCatAdapter(Platform):
             await self._runner.cleanup()
         logger.info("NapCat 服务端已停止")
 
+    async def _handle_notice(self, data: dict):
+        """处理通知事件"""
+        notice_type = data.get("notice_type")
+        sub_type = data.get("sub_type")
+
+        if notice_type == "notify" and sub_type == "poke":
+            await self._handle_poke(data)
+
+    async def _handle_poke(self, data: dict):
+        """处理戳一戳事件"""
+        target_id = str(data.get("target_id", ""))
+        self_id = str(data.get("self_id", ""))
+        if target_id != self_id:
+            return  # 戳的不是bot
+
+        user_id = str(data.get("user_id", ""))
+        reply = await self._poke_mgr.get_reply() if self._poke_mgr else "……嗯？"
+        logger.info("戳一戳: user=%s reply=%s", user_id, reply)
+
+        # 构建回复目标
+        group_id = data.get("group_id")
+        target = {"group_id": int(group_id)} if group_id else {"user_id": int(user_id)}
+        await self._call_api("send_msg", {**target, "message": reply})
+
     async def send_message(self, target: dict, message: str):
         """通过 OneBot API 发送消息"""
         params = {"message": message}
@@ -128,13 +154,19 @@ class NapCatAdapter(Platform):
         logger.debug("收到 WS 消息: %s", raw[:200])
         try:
             data = json.loads(raw)
-            if data.get("post_type") == "message":
+            post_type = data.get("post_type")
+
+            if post_type == "message":
                 event = self._convert(data)
                 if event:
                     logger.debug("发布消息事件: user=%s msg=%s", event.user_id, event.message[:50])
                     await self._publish_event(event)
                 else:
                     logger.debug("消息被 _convert 过滤（自己发的消息?）")
+
+            elif post_type == "notice":
+                await self._handle_notice(data)
+
         except json.JSONDecodeError:
             logger.warning("无效消息: %s", raw[:200])
 

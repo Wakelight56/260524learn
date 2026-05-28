@@ -21,6 +21,7 @@ from src.plugin.builtins.clear_memory import ClearMemoryPlugin
 from src.plugin.builtins.whitelist import setup as whitelist_setup
 from src.plugin.builtins.restart import setup as restart_setup
 from src.provider.factory import create_provider
+from src.knowledge.poke_replies import PokeReplyManager
 from src.store.memory import MemoryStore
 
 logger = logging.getLogger("autochat.bot")
@@ -42,6 +43,7 @@ class AutoBot:
         self.emotion_tracker = EmotionTracker()
         self._running = False
         self._retriever = None
+        self._provider = None
 
     def _init_knowledge_base(self):
         """初始化剧情知识库"""
@@ -61,9 +63,9 @@ class AutoBot:
         self.scheduler.add_stage(PermissionStage(self.config))
         self.scheduler.add_stage(RateLimitStage(self.config))
 
-        provider = create_provider(self.config)
+        self._provider = create_provider(self.config)
         self.scheduler.add_stage(AIProcessStage(
-            provider, self.memory, self.config,
+            self._provider, self.memory, self.config,
             retriever=self._retriever, emotion_tracker=self.emotion_tracker,
         ))
         self.scheduler.add_stage(DecorateStage(self.config))
@@ -133,10 +135,13 @@ class AutoBot:
             await self._on_message_event(event.data)
         self.event_bus.subscribe("message", on_event)
 
-        # 6. 启动平台适配器
+        # 6. 戳一戳回复管理器
+        self._poke_mgr = PokeReplyManager(self._provider) if self._provider else None
+
+        # 7. 启动平台适配器
         napcat_cfg = self.config.get("onebot", {})
         if napcat_cfg.get("enabled", True):
-            napcat = NapCatAdapter(self.config, self.event_bus)
+            napcat = NapCatAdapter(self.config, self.event_bus, poke_mgr=self._poke_mgr)
             self.platforms.append(napcat)
 
         # 6. 启动事件分发 + 平台连接

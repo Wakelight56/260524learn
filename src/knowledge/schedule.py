@@ -56,6 +56,71 @@ SCHEDULE = {
 }
 
 
+# 戳一戳回复 — 按时间段
+POKE_REPLIES = {
+    "weekday": {
+        (5, 7): "……早上好。这么早找我有什么事吗？",
+        (7, 8): "？我在去学校的路上……忽然戳我一下，怎么了？",
+        (8, 12): "……在上课。有什么事等下课再说吧。",
+        (12, 13): "午休中。我在看书……嗯？怎么了？",
+        (13, 15): "……现在是上课时间。",
+        (15, 16): "我在图书馆值班……嘘，安静一点。",
+        (16, 17): "刚放学。正准备去练习……怎么了？",
+        (17, 18): "现在在练习……等一下再回复你。",
+        (18, 19): "刚练习完，在MEIKO姐这里喝咖啡……要给你带一杯吗？",
+        (19, 20): "在家。刚吃完饭，正在做作业……",
+        (20, 21): "在房间里听音乐……嗯？有什么事？",
+        (21, 22): "……我在看书。怎么了？",
+        (22, 23): "准备睡了……明天还要早起。",
+    },
+    "saturday": {
+        (5, 10): "……周六早上就戳我，有什么事吗？",
+        (10, 13): "在CRANE这边。彰人也在……你要过来吗？",
+        (13, 15): "下午在排练……有什么事吗？",
+        (15, 18): "在练习或者休息中……",
+        (18, 22): "在家。周六晚上比较放松……怎么了？",
+        (22, 23): "准备睡了。明天还有安排。",
+    },
+    "sunday": {
+        (5, 9): "……周日早上。今天打算去图书馆。",
+        (9, 12): "在图书馆看书……有什么事吗？",
+        (12, 13): "午饭时间……嗯？",
+        (13, 16): "下午在练琴……怎么了？",
+        (16, 18): "VBS练习中……",
+        (18, 21): "在家。周日晚上看看书，准备明天的事。",
+        (21, 23): "准备休息了……下周还要继续努力。",
+    },
+}
+
+DEEP_NIGHT_REPLIES = [
+    "……已经这个时间了。有什么事明天再说吧。",
+    "唔……（迷糊）…这么晚了还不睡吗？",
+    "……深夜了。我明天还要早起。",
+    "…………（没反应，好像睡了）",
+]
+
+
+def get_poke_reply(dt: datetime | None = None) -> str:
+    """根据当前行程返回戳一戳回复"""
+    import random
+    now = dt or datetime.now()
+    weekday_idx = now.weekday()
+    hour = now.hour
+
+    if weekday_idx == 5:
+        replies = POKE_REPLIES["saturday"]
+    elif weekday_idx == 6:
+        replies = POKE_REPLIES["sunday"]
+    else:
+        replies = POKE_REPLIES["weekday"]
+
+    for (start, end), reply in sorted(replies.items(), reverse=True):
+        if start <= hour < end:
+            return reply
+
+    return random.choice(DEEP_NIGHT_REPLIES)
+
+
 def get_current_activity(dt: datetime | None = None) -> str:
     """获取冬弥当前的行程描述"""
     now = dt or datetime.now()
