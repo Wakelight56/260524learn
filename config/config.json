@@ -1,38 +1,44 @@
 {
   "onebot": {
-    "protocol": "ws",
+    "enabled": true,
     "host": "127.0.0.1",
-    "port": 3001,
+    "port": 6199,
     "access_token": ""
   },
   "ai": {
     "provider": "openai",
     "openai": {
-      "api_key": "",
-      "base_url": "https://api.openai.com/v1",
-      "model": "gpt-3.5-turbo",
-      "max_tokens": 2000,
-      "temperature": 0.7
+      "api_key": "sk-your-api-key-here",
+      "base_url": "https://api.deepseek.com/v1",
+      "model": "deepseek-v4-flash",
+      "max_tokens": 200,
+      "temperature": 1.0
     },
     "claude": {
       "api_key": "",
       "base_url": "https://api.anthropic.com",
       "model": "claude-sonnet-4-6",
       "max_tokens": 2000,
-      "temperature": 0.7
+      "temperature": 1.0
     }
   },
   "bot": {
-    "name": "AutoChat",
-    "nickname": ["硝基苯的AI", "助手"],
-    "master_qq": 0,
+    "name": "冬弥",
+    "nickname": ["冬弥", "青柳冬弥", "Toya"],
+    "master_qq": 3437401237,
+    "allowed_users": [3437401237],
+    "allowed_groups": [],
     "auto_reply_groups": [],
     "auto_reply_private": true,
-    "reply_prefix": "",
+    "blocked_users": [],
+    "blocked_groups": [],
+    "rate_limit": 20,
+    "trigger_prefix": "小冬",
+    "trigger_at_mention": true,
     "enable_memory": true,
     "max_history": 50,
-    "trigger_prefix": "",
-    "trigger_at_mention": true
+    "reply_prefix": "",
+    "add_timestamp": false
   },
   "log": {
     "level": "INFO",

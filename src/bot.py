@@ -1,63 +1,171 @@
+"""AutoChat 主控 — 连接平台、事件总线、Pipeline、插件"""
+
 import asyncio
 import logging
+from pathlib import Path
 
-from .ai import OpenAIProvider, ClaudeProvider
-from .handlers.message import MessageHandler
-from .onebot import OneBotClient
+from src.config_manager import ConfigManager
+from src.event_bus import EventBus
+from src.emotion.tracker import EmotionTracker
+from src.knowledge.retriever import StoryRetriever
+from src.pipeline.scheduler import PipelineScheduler
+from src.pipeline.stages.waking import WakingStage
+from src.pipeline.stages.permission import PermissionStage
+from src.pipeline.stages.rate_limit import RateLimitStage
+from src.pipeline.stages.process import AIProcessStage
+from src.pipeline.stages.decorate import DecorateStage
+from src.platform.sources.napcat import NapCatAdapter
+from src.platform.event import MessageEvent
+from src.plugin.manager import PluginManager
+from src.plugin.builtins.clear_memory import ClearMemoryPlugin
+from src.plugin.builtins.whitelist import setup as whitelist_setup
+from src.plugin.builtins.restart import setup as restart_setup
+from src.provider.factory import create_provider
+from src.store.memory import MemoryStore
 
 logger = logging.getLogger("autochat.bot")
 
 
 class AutoBot:
-    """AutoChat 机器人主控"""
+    """AutoChat 机器人主控制器"""
 
     def __init__(self, config: dict):
         self.config = config
-        self.onebot = OneBotClient(config.get("onebot", {}))
-        self.ai = self._init_ai()
-        self.handler = MessageHandler(config, self.ai)
+        self.event_bus = EventBus()
+        self.memory = MemoryStore(
+            data_dir="memory",
+            max_history=config.get("bot", {}).get("max_history", 50),
+        )
+        self.plugin_mgr = PluginManager()
+        self.scheduler = PipelineScheduler()
+        self.platforms = []
+        self.emotion_tracker = EmotionTracker()
+        self._running = False
+        self._retriever = None
 
-    def _init_ai(self):
-        """初始化 AI 提供商"""
-        ai_config = self.config.get("ai", {})
-        provider = ai_config.get("provider", "openai")
-        logger.info("初始化 AI 提供商: %s", provider)
+    def _init_knowledge_base(self):
+        """初始化剧情知识库"""
+        kb_path = "memory/knowledge.json"
+        if Path(kb_path).exists():
+            self._retriever = StoryRetriever(kb_path)
+            logger.info("知识库加载完成: %d 条故事", self._retriever.size)
+        else:
+            logger.warning(
+                "知识库文件不存在: %s。请运行 python -m src.knowledge.builder 构建。",
+                kb_path,
+            )
 
-        if provider == "claude":
-            return ClaudeProvider(ai_config.get("claude", {}))
-        return OpenAIProvider(ai_config.get("openai", {}))
+    def _build_pipeline(self):
+        """装配管线阶段"""
+        self.scheduler.add_stage(WakingStage(self.config))
+        self.scheduler.add_stage(PermissionStage(self.config))
+        self.scheduler.add_stage(RateLimitStage(self.config))
+
+        provider = create_provider(self.config)
+        self.scheduler.add_stage(AIProcessStage(
+            provider, self.memory, self.config,
+            retriever=self._retriever, emotion_tracker=self.emotion_tracker,
+        ))
+        self.scheduler.add_stage(DecorateStage(self.config))
+
+    async def _on_message_event(self, event: MessageEvent):
+        """消息事件回调 — 先让插件拦截，再走管线"""
+        logger.info("_on_message_event: user=%s msg=%s", event.user_id, event.message[:80])
+        await self._handle_event(event)
+
+    async def _handle_event(self, event: MessageEvent):
+        """处理消息：插件优先，然后走管线"""
+        # 插件拦截
+        plugin_reply = await self.plugin_mgr.notify_message(event)
+        if plugin_reply:
+            target = event.reply(plugin_reply)
+            for platform in self.platforms:
+                try:
+                    await platform.send_message(target, plugin_reply)
+                except Exception as e:
+                    logger.error("插件回复发送失败: %s", e)
+            return
+
+        # 走 AI 管线
+        logger.info("开始管线执行")
+        await self.scheduler.execute(event)
+        logger.info("管线执行完成")
 
     async def start(self):
         """启动机器人"""
-        await self.onebot.connect()
+        self._running = True
 
-        # 注册消息处理器
-        self.onebot.on_message(lambda msg: self.handler.handle(msg, self.onebot.send_msg))
+        # 1. 初始化知识库
+        self._init_knowledge_base()
 
-        logger.info("AutoChat 机器人已启动")
-        await self.onebot.listen()
+        # 2. 加载插件
+        logger.info("加载插件...")
+        self.plugin_mgr.load_builtins()
+        ClearMemoryPlugin.set_store(self.memory)
+        master_qq = self.config.get("bot", {}).get("master_qq", 0)
+        restart_setup(master_qq)
+
+        # 3. 装配管线
+        self._build_pipeline()
+
+        # 4. 装配白名单插件
+        for stage in self.scheduler._stages:
+            if isinstance(stage, PermissionStage):
+                whitelist_setup(
+                    stage=stage,
+                    config_path="config/config.json",
+                    master_qq=master_qq,
+                )
+                break
+
+        # 5. 设置消息发送器
+        async def send_to_platform(target: dict, msg: str):
+            for p in self.platforms:
+                try:
+                    await p.send_message(target, msg)
+                except Exception as e:
+                    logger.error("发送到 %s 失败: %s", p.platform_name, e)
+
+        self.scheduler.set_sender(send_to_platform)
+
+        # 5. 注册事件处理
+        async def on_event(event):
+            await self._on_message_event(event.data)
+        self.event_bus.subscribe("message", on_event)
+
+        # 6. 启动平台适配器
+        napcat_cfg = self.config.get("onebot", {})
+        if napcat_cfg.get("enabled", True):
+            napcat = NapCatAdapter(self.config, self.event_bus)
+            self.platforms.append(napcat)
+
+        # 6. 启动事件分发 + 平台连接
+        await self.plugin_mgr.notify_start()
+        logger.info("AutoChat 启动完成")
+
+        # 并发运行：事件分发 + 所有平台
+        tasks = [asyncio.create_task(self.event_bus.dispatch())]
+        for p in self.platforms:
+            tasks.append(asyncio.create_task(self._run_platform(p)))
+
+        await asyncio.gather(*tasks)
+
+    async def _run_platform(self, platform):
+        """运行平台连接（含自动重连）"""
+        while self._running:
+            try:
+                await platform.start()
+            except ConnectionRefusedError:
+                logger.warning("%s 连接失败，5秒后重试...", platform.platform_name)
+                await asyncio.sleep(5)
+            except Exception as e:
+                logger.error("%s 异常: %s, 10秒后重试", platform.platform_name, e)
+                await asyncio.sleep(10)
 
     async def stop(self):
         """停止机器人"""
-        await self.onebot.close()
-        logger.info("AutoChat 机器人已停止")
-
-    def run(self):
-        """运行入口"""
-        try:
-            asyncio.run(self._run())
-        except KeyboardInterrupt:
-            logger.info("收到中断信号")
-
-    async def _run(self):
-        while True:
-            try:
-                await self.start()
-            except (ConnectionError, ConnectionRefusedError):
-                logger.warning("连接失败，10秒后重试...")
-                await asyncio.sleep(10)
-            except Exception as e:
-                logger.error("运行异常: %s", e)
-                await asyncio.sleep(5)
-            else:
-                break
+        self._running = False
+        for p in self.platforms:
+            await p.stop()
+        await self.plugin_mgr.notify_stop()
+        logger.info("AutoChat 已停止")

@@ -21,6 +21,9 @@ logs/*
 memory/*
 !memory/.gitkeep
 
+# 情绪存储
+emotions/*
+
 # 系统
 .DS_Store
 Thumbs.db
