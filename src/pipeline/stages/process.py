@@ -6,6 +6,7 @@ from typing import Optional
 from src.emotion.tracker import EmotionTracker
 from src.knowledge.character import SYSTEM_PROMPT as TOUYA_SYSTEM_PROMPT
 from src.knowledge.retriever import StoryRetriever
+from src.knowledge.schedule import get_current_activity
 from src.pipeline.stage import Stage, StageContext
 
 logger = logging.getLogger("autochat.stage.process")
@@ -51,6 +52,10 @@ class AIProcessStage(Stage):
             system_prompt = f"{system_prompt}\n\n{emotion_context}"
             logger.debug("情绪注入: mood=%d closeness=%d",
                          emotion_state["touya_mood"], emotion_state["touya_closeness"])
+
+        # 注入当前行程上下文
+        schedule_context = get_current_activity()
+        system_prompt = f"{system_prompt}\n\n{schedule_context}"
 
         # 检索相关剧情知识并注入
         if self._retriever and self._retriever.size > 0:
