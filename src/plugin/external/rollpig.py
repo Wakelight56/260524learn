@@ -77,6 +77,7 @@ class RollPigPlugin(Plugin):
 
     def _init_regular_font(self):
         font_paths = [
+            self.font_dir / "NotoSerifSC-Regular.otf",
             self.font_dir / "可爱字体.ttf",
             self.font_dir / "SourceHanSansCN-Regular.otf",
             "C:/Windows/Fonts/msyh.ttc",
@@ -90,6 +91,7 @@ class RollPigPlugin(Plugin):
 
     def _init_bold_font(self):
         font_paths = [
+            self.font_dir / "NotoSerifSC-Bold.otf",
             self.font_dir / "荆南麦圆体.otf",
             self.font_dir / "SourceHanSansCN-Bold.otf",
             "C:/Windows/Fonts/msyhbd.ttc",
