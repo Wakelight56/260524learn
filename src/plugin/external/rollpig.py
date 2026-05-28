@@ -77,14 +77,15 @@ class RollPigPlugin(Plugin):
 
     def _init_regular_font(self):
         font_paths = [
+            # 宋体优先（思源宋体 / Noto Serif CJK）
             self.font_dir / "NotoSerifSC-Regular.otf",
-            self.font_dir / "可爱字体.ttf",
-            self.font_dir / "SourceHanSansCN-Regular.otf",
+            # 微软雅黑（仅 Windows 可用）
             "C:/Windows/Fonts/msyh.ttc",
-            "C:/Windows/Fonts/simhei.ttf",
+            # Linux Docker 备选
             "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            # macOS 备选
             "/System/Library/Fonts/PingFang.ttc",
         ]
         return self._load_font(font_paths, self.DESC_FONT_SIZE, "常规")
@@ -92,8 +93,6 @@ class RollPigPlugin(Plugin):
     def _init_bold_font(self):
         font_paths = [
             self.font_dir / "NotoSerifSC-Bold.otf",
-            self.font_dir / "荆南麦圆体.otf",
-            self.font_dir / "SourceHanSansCN-Bold.otf",
             "C:/Windows/Fonts/msyhbd.ttc",
             "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
             "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
