@@ -143,10 +143,11 @@ class AutoBot:
         await self.plugin_mgr.notify_start()
         logger.info("AutoChat 启动完成")
 
-        # 并发运行：事件分发 + 所有平台
+        # 并发运行：事件分发 + 所有平台 + 定时清理
         tasks = [asyncio.create_task(self.event_bus.dispatch())]
         for p in self.platforms:
             tasks.append(asyncio.create_task(self._run_platform(p)))
+        tasks.append(asyncio.create_task(self._periodic_cleanup()))
 
         await asyncio.gather(*tasks)
 
@@ -161,6 +162,16 @@ class AutoBot:
             except Exception as e:
                 logger.error("%s 异常: %s, 10秒后重试", platform.platform_name, e)
                 await asyncio.sleep(10)
+
+    async def _periodic_cleanup(self):
+        """定时清理过期会话"""
+        cleanup_days = self.config.get("bot", {}).get("cleanup_days", 7)
+        interval = max(3600, cleanup_days * 86400 // 7)  # 至少1小时，默认1天
+        while self._running:
+            await asyncio.sleep(interval)
+            cleaned = self.memory.cleanup_stale_sessions(days=cleanup_days)
+            if cleaned:
+                logger.info("定时清理: 移除了 %d 个过期会话", cleaned)
 
     async def stop(self):
         """停止机器人"""
