@@ -1,4 +1,4 @@
-"""状态查询插件 — 响应 /status 命令"""
+﻿"""状态查询插件 — 响应 /status 命令"""
 
 import time
 
@@ -16,7 +16,7 @@ class StatusPlugin(Plugin):
         return "status"
 
     async def on_message(self, event: MessageEvent) -> str | None:
-        if event.message.strip() == "/status":
+        if event.message.strip() in ("/status", "状态", "运行状态"):
             uptime = time.time() - _bot_start_time
             hours, rem = divmod(int(uptime), 3600)
             mins, secs = divmod(rem, 60)
@@ -27,3 +27,4 @@ class StatusPlugin(Plugin):
                 f"• 工作正常 ✓"
             )
         return None
+

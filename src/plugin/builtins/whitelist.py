@@ -31,11 +31,17 @@ class WhitelistPlugin(Plugin):
     async def on_message(self, event: MessageEvent) -> str | None:
         global _stage, _config_path, _master_qq
 
-        if not event.message.strip().startswith("/whitelist"):
+        if not event.message.strip().startswith("/whitelist") and not event.message.strip().startswith("白名单"):
             return None
 
-        parts = event.message.strip().split()
-        cmd = parts[1] if len(parts) > 1 else "show"
+        raw = event.message.strip()
+        # 统一 /whitelist 和 白名单 两种格式
+        if raw.startswith("/whitelist"):
+            raw = raw[len("/whitelist"):].strip()
+        elif raw.startswith("白名单"):
+            raw = raw[len("白名单"):].strip()
+        parts = raw.split() if raw else []
+        cmd = parts[0] if parts else "show"
         uid_int = int(event.user_id)
         is_master = uid_int == _master_qq
         logger.info(
@@ -49,10 +55,12 @@ class WhitelistPlugin(Plugin):
         if not is_master:
             return "你没有权限执行此操作。"
 
-        if cmd in ("add", "del", "delete", "remove"):
-            if len(parts) < 4:
-                return "格式: /whitelist add/del user/group <id>"
-            return await _modify(cmd, parts[2], parts[3])
+        if cmd in ("add", "del", "delete", "remove", "添加", "删除"):
+            if len(parts) < 3:
+                return "格式: 白名单 添加/删除 用户/群 <QQ号>\n或: /whitelist add/del user/group <id>"
+            ncmd = "add" if cmd in ("add", "添加") else "del"
+            ntarget = "user" if parts[1] in ("user", "用户") else "group"
+            return await _modify(ncmd, ntarget, parts[2])
 
         return _show()
 
@@ -94,7 +102,7 @@ async def _modify(action: str, target: str, value: str) -> str:
         lst = _stage.allowed_groups
         key = "allowed_groups"
     else:
-        return "目标类型错误，请使用 user 或 group"
+        return "目标类型错误，请使用 user/用户 或 group/群"
 
     if action in ("del", "delete", "remove"):
         if val not in lst:
@@ -125,3 +133,6 @@ def _persist(key: str, lst: list[int]):
             json.dump(cfg, f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.error("持久化白名单失败: %s", e)
+
+
+

@@ -44,9 +44,10 @@ class PermissionStage(Stage):
             return
 
         # 白名单：私聊按用户，群聊按群
-        if self._allowed_users and uid not in self._allowed_users:
+        if gid:
+            if self._allowed_groups and gid not in self._allowed_groups:
+                ctx.should_stop = True
+        elif self._allowed_users and uid not in self._allowed_users:
             ctx.should_stop = True
             return
-        if gid and self._allowed_groups and gid not in self._allowed_groups:
-            ctx.should_stop = True
 

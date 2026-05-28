@@ -27,6 +27,18 @@ class PluginManager:
         import src.plugin.builtins as pkg
         self._load_from_package(pkg)
 
+    def load_user_plugins(self):
+        """加载用户自定义插件（src/plugin/user/）"""
+        import src.plugin.user as pkg
+        self._load_from_package(pkg)
+        logger.info("用户插件目录已扫描")
+
+    def load_external_plugins(self):
+        """加载外部插件（src/plugin/external/）"""
+        import src.plugin.external as pkg
+        self._load_from_package(pkg)
+        logger.info("外部插件目录已扫描")
+
     def load_from_path(self, path: str):
         """从目录加载外部插件"""
         if not os.path.isdir(path):

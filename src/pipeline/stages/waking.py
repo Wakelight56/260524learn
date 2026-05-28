@@ -3,6 +3,7 @@
 import logging
 import random
 import re
+import time
 
 from src.pipeline.stage import Stage, StageContext
 
@@ -21,6 +22,12 @@ RELEVANT_WORDS = [
     "冬弥", "Toya",
 ]
 
+# 提取纯文本（去掉所有 CQ 码），用于判断消息是否只有图片
+CQ_TAG_RE = re.compile(r"\[CQ:\S+?\]")
+
+# 随机回复冷却时间（秒）
+RANDOM_COOLDOWN = 60
+
 
 class WakingStage(Stage):
     """唤醒检测：私聊全回复；群聊需触发或概率触发"""
@@ -33,6 +40,7 @@ class WakingStage(Stage):
         self._nickname = bot_cfg.get("nickname", [])
         self._auto_reply_private = bot_cfg.get("auto_reply_private", True)
         self._random_prob = bot_cfg.get("random_reply_probability", 0.0)
+        self._last_random_reply: dict[str, float] = {}  # session_key -> timestamp
 
     async def process(self, ctx: StageContext):
         event = ctx.event
@@ -65,45 +73,62 @@ class WakingStage(Stage):
 
             # 概率触发（不满足直接触发条件时）
             if self._random_prob > 0:
-                prob = self._calculate_probability(msg)
-                roll = random.random()
-                logger.debug(
-                    "概率触发: prob=%.2f roll=%.2f msg=%s", prob, roll, msg[:30],
-                )
-                if roll < prob:
-                    logger.info("概率触发回复: prob=%.2f", prob)
+                # 纯图片消息不触发随机回复（模型没有识图能力）
+                stripped_text = CQ_TAG_RE.sub("", msg).strip()
+                if not stripped_text:
+                    logger.debug("跳过纯图片消息的随机回复")
+                    ctx.should_stop = True
                     return
+
+                # 冷却检查
+                last_time = self._last_random_reply.get(event.session_key, 0)
+                if time.time() - last_time < RANDOM_COOLDOWN:
+                    logger.debug("随机回复冷却中: %.0fs", time.time() - last_time)
+                else:
+                    prob = self._calculate_probability(msg)
+                    roll = random.random()
+                    logger.debug(
+                        "概率触发: prob=%.2f roll=%.2f msg=%s", prob, roll, msg[:30],
+                    )
+                    if roll < prob:
+                        logger.info("概率触发回复: prob=%.2f", prob)
+                        ctx.extra["cleaned_message"] = stripped_text
+                        self._last_random_reply[event.session_key] = time.time()
+                        return
 
             # 不满足任何条件
             ctx.should_stop = True
 
     def _calculate_probability(self, message: str) -> float:
         """根据消息内容计算回复概率"""
+        # 去掉 CQ 码后再判断（图片等不纳入计算）
+        text = CQ_TAG_RE.sub("", message).strip()
+
         base = self._random_prob
 
         # 提问加成
-        has_question = "?" in message or "？" in message
+        has_question = "?" in text or "？" in text
 
         # 长度加成（较长消息更可能为有效对话）
         length_bonus = 0
-        if len(message) > 10:
-            length_bonus += 0.05
-        if len(message) > 30:
-            length_bonus += 0.05
-        if len(message) > 60:
-            length_bonus += 0.05
+        if len(text) > 10:
+            length_bonus += 0.03
+        if len(text) > 30:
+            length_bonus += 0.03
+        if len(text) > 60:
+            length_bonus += 0.03
 
         # 关键词加成（涉及冬弥相关话题）
         keyword_bonus = 0
-        hit_keywords = [kw for kw in RELEVANT_WORDS if kw in message]
+        hit_keywords = [kw for kw in RELEVANT_WORDS if kw in text]
         if hit_keywords:
-            keyword_bonus = 0.15 + 0.05 * min(len(hit_keywords), 3)
+            keyword_bonus = 0.08 + 0.03 * min(len(hit_keywords), 3)
 
         # 直接提及加成（提到冬弥本人）
-        mention_bonus = 0.3 if "冬弥" in message else 0
+        mention_bonus = 0.2 if "冬弥" in text else 0
 
-        prob = base + (0.2 if has_question else 0) + length_bonus + keyword_bonus + mention_bonus
-        return min(prob, 0.85)
+        prob = base + (0.1 if has_question else 0) + length_bonus + keyword_bonus + mention_bonus
+        return min(prob, 0.7)
 
     def _has_at_self(self, event) -> bool:
         return f"[CQ:at,qq={event.self_id}]" in event.raw_message

@@ -46,9 +46,15 @@ class StoryRetriever:
             with open(kb_path, encoding="utf-8") as f:
                 self._entries = json.load(f)
             lang_count = {}
+            # 预计算所有条目的搜索 token，避免每次搜索都重新分词
             for e in self._entries:
                 lang = e.get("language", "?")
                 lang_count[lang] = lang_count.get(lang, 0) + 1
+                search_text = e.get("_search_text", "")
+                e["_tokens"] = self._tokenize_multilingual(search_text)
+                touya_text = " ".join(e.get("touya_lines", []))
+                e["_touya_tokens"] = self._tokenize_multilingual(touya_text)
+                e["_title_tokens"] = self._tokenize_multilingual(e.get("title", ""))
             logger.info(
                 "知识库加载完成: %d 条故事, 语言分布: %s",
                 len(self._entries), lang_count,
@@ -169,30 +175,24 @@ class StoryRetriever:
         return tokens
 
     def _score(self, entry: dict, query_tokens: set[str]) -> float:
-        """计算条目与查询的多语言匹配得分。"""
-        search_text = entry.get("_search_text", "")
-        if not search_text:
+        """计算条目与查询的多语言匹配得分（使用预计算 token）。"""
+        entry_tokens = entry.get("_tokens") or self._tokenize_multilingual(
+            entry.get("_search_text", "")
+        )
+        if not entry_tokens:
             return 0.0
 
-        entry_tokens = self._tokenize_multilingual(search_text)
-
-        # 只计入有意义的共现
         intersection = query_tokens & entry_tokens
         if not intersection:
             return 0.0
 
-        # 基础共现得分
         base_score = len(intersection)
 
-        # 加分：角色台词命中（权重更高）
-        touya_text = " ".join(entry.get("touya_lines", []))
-        touya_tokens = self._tokenize_multilingual(touya_text)
+        touya_tokens = entry.get("_touya_tokens") or set()
         touya_overlap = len(query_tokens & touya_tokens)
         base_score += touya_overlap * 1.5
 
-        # 加分：标题命中
-        title = entry.get("title", "")
-        title_tokens = self._tokenize_multilingual(title)
+        title_tokens = entry.get("_title_tokens") or set()
         title_overlap = len(query_tokens & title_tokens)
         base_score += title_overlap * 2.0
 

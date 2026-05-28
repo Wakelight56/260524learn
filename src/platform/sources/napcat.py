@@ -3,8 +3,8 @@
 import asyncio
 import json
 import logging
+import random
 import time
-import uuid
 from typing import Optional
 
 import aiohttp
@@ -38,6 +38,8 @@ class NapCatAdapter(Platform):
         self._runner: Optional[web.AppRunner] = None
         self._ws_clients: set[web.WebSocketResponse] = set()
         self._poke_mgr = poke_mgr
+        self._api_futures: dict[str, asyncio.Future] = {}
+        self._api_seq = 0
 
     async def start(self):
         """启动 WebSocket 服务端，等待 NapCat 连接"""
@@ -149,11 +151,34 @@ class NapCatAdapter(Platform):
             except Exception as e:
                 logger.error("发送 API 请求失败: %s", e)
 
+    async def call_api_and_wait(self, action: str, params: dict, timeout: float = 10.0) -> dict | None:
+        """发送 API 请求并等待响应（基于 echo 机制）"""
+        self._api_seq += 1
+        echo = f"napcat_api_{self._api_seq}_{random.randint(0, 9999)}"
+        future = asyncio.get_event_loop().create_future()
+        self._api_futures[echo] = future
+        await self._call_api(action, params, echo=echo)
+        try:
+            return await asyncio.wait_for(future, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._api_futures.pop(echo, None)
+            logger.warning("API %s 超时", action)
+            return None
+
     async def _handle_raw(self, raw: str):
         """处理 NapCat 发来的原始消息"""
         logger.debug("收到 WS 消息: %s", raw[:200])
         try:
             data = json.loads(raw)
+
+            # 检查是否是 API 响应（带 echo 字段）
+            echo = data.get("echo", "")
+            if echo in self._api_futures:
+                future = self._api_futures.pop(echo, None)
+                if future and not future.done():
+                    future.set_result(data)
+                return
+
             post_type = data.get("post_type")
 
             if post_type == "message":
@@ -188,7 +213,7 @@ class NapCatAdapter(Platform):
                 raw_message=json.dumps(raw, ensure_ascii=False),
                 user_id=user_id,
                 self_id=self_id,
-                message_id=str(uuid.uuid4().hex[:8]),
+                message_id=str(raw.get("message_id", "")),
                 timestamp=int(time.time()),
             )
         elif msg_type == "group":
@@ -201,7 +226,7 @@ class NapCatAdapter(Platform):
                 user_id=user_id,
                 group_id=str(raw.get("group_id", "")),
                 self_id=self_id,
-                message_id=str(uuid.uuid4().hex[:8]),
+                message_id=str(raw.get("message_id", "")),
                 timestamp=int(time.time()),
             )
         return None

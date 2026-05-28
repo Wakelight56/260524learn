@@ -1,6 +1,7 @@
 """AutoChat 主控 — 连接平台、事件总线、Pipeline、插件"""
 
 import asyncio
+import json
 import logging
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from src.plugin.manager import PluginManager
 from src.plugin.builtins.clear_memory import ClearMemoryPlugin
 from src.plugin.builtins.whitelist import setup as whitelist_setup
 from src.plugin.builtins.restart import setup as restart_setup
+from src.plugin.builtins.help import setup as help_setup
+from src.plugin.builtins.update_knowledge import setup as update_kb_setup
 from src.provider.factory import create_provider
 from src.knowledge.poke_replies import PokeReplyManager
 from src.store.memory import MemoryStore
@@ -103,9 +106,19 @@ class AutoBot:
         # 2. 加载插件
         logger.info("加载插件...")
         self.plugin_mgr.load_builtins()
+        self.plugin_mgr.load_user_plugins()
+        self.plugin_mgr.load_external_plugins()
         ClearMemoryPlugin.set_store(self.memory)
         master_qq = self.config.get("bot", {}).get("master_qq", 0)
         restart_setup(master_qq)
+        help_setup(master_qq)
+        update_kb_setup(master_qq, self._retriever)
+
+        # 注入 master_qq 到自学习插件
+        sl_plugin = self.plugin_mgr.get("self_learning")
+        if sl_plugin:
+            sl_plugin.setup(master_qq)
+            logger.info("自学习插件已配置")
 
         # 3. 装配管线
         self._build_pipeline()
@@ -144,12 +157,24 @@ class AutoBot:
             napcat = NapCatAdapter(self.config, self.event_bus, poke_mgr=self._poke_mgr)
             self.platforms.append(napcat)
 
+        # 为图库插件注入 API caller（用于通过 file= 下载图片）
+        gallery_plugin = self.plugin_mgr.get("gallery")
+        if gallery_plugin:
+            for p in self.platforms:
+                if hasattr(p, "call_api_and_wait"):
+                    gallery_plugin._api_caller = p.call_api_and_wait
+                    logger.info("图库插件 API caller 已注入")
+                    break
+
         # 6. 启动事件分发 + 平台连接
         await self.plugin_mgr.notify_start()
         logger.info("AutoChat 启动完成")
 
+        # 发送重启完毕通知（如果有重启标志）
+        tasks = [asyncio.create_task(self._send_restart_notification())]
+
         # 并发运行：事件分发 + 所有平台 + 定时清理
-        tasks = [asyncio.create_task(self.event_bus.dispatch())]
+        tasks += [asyncio.create_task(self.event_bus.dispatch())]
         for p in self.platforms:
             tasks.append(asyncio.create_task(self._run_platform(p)))
         tasks.append(asyncio.create_task(self._periodic_cleanup()))
@@ -177,6 +202,26 @@ class AutoBot:
             cleaned = self.memory.cleanup_stale_sessions(days=cleanup_days)
             if cleaned:
                 logger.info("定时清理: 移除了 %d 个过期会话", cleaned)
+
+    async def _send_restart_notification(self):
+        """检查重启标志，发送重启完毕通知"""
+        flag_path = Path("memory/.restart_flag.json")
+        if not flag_path.exists():
+            return
+        try:
+            target = json.loads(flag_path.read_text(encoding="utf-8"))
+            flag_path.unlink()
+            # 等待平台连接就绪（NapCat WS 连接需要几秒）
+            msg = "已重启完毕。"
+            await asyncio.sleep(10)
+            for platform in self.platforms:
+                try:
+                    await platform.send_message(target, msg)
+                    logger.info("重启通知已发送到 %s", target)
+                except Exception as e:
+                    logger.warning("发送重启通知失败: %s", e)
+        except Exception as e:
+            logger.error("重启通知异常: %s", e)
 
     async def stop(self):
         """停止机器人"""

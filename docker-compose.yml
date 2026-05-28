@@ -9,6 +9,7 @@ services:
       - ./config:/app/config
       - ./memory:/app/memory
       - ./logs:/app/logs
+      - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
     network_mode: host
