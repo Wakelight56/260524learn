@@ -38,6 +38,7 @@
     "enable_memory": true,
     "max_history": 50,
     "cleanup_days": 7,
+    "random_reply_probability": 0.05,
     "reply_prefix": "",
     "add_timestamp": false
   },
